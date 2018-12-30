@@ -50,8 +50,10 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 //---
+   Total = TotalOrder();
+   bool canOpen;
 
-   bool canOpen = getMM();
+   if (Total == 0) { canOpen = true; } else { canOpen = getMM(); }
   
    Order = getSignal();
 
@@ -101,17 +103,25 @@ void OnTick()
 
 bool getMM() {
 
-   if (TotalOrder() == 0) { return true; } //no order yet
-
-   checkBlockTrade();
-
-   return true;
-}
-
-void checkBlockTrade() {
+   return blockTrade();
 
 }
+// -----------
+/* Money Management Zone */
+bool blockTrade() {
 
+   if (Total == 4) {
+      if (OrderSelect(3, SELECT_BY_POS, MODE_TRADES)) {
+         if (checkLoss(OrderTickets())) { Alert('Block Full'); return false; }
+      }
+   }
+}
+
+bool checkLoss(ticket) {
+
+}
+//---------------
+/* signal zone */
 int getSignal() {
    bool fish = FisherCheck();
    bool sto = StoCheck();
