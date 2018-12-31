@@ -11,14 +11,14 @@
 
 int P = 1;
 int Order = SIGNAL_NONE;
-int Total, Ticket, Ticket2;
+int Total, Ticket;
 double StopLossLevel, TakeProfitLevel, StopLevel;
 
 extern int MagicNumber = 12345;
 extern bool SignalMail = False;
 extern double Lots = 0.10;
 extern int Slippage = 3;
-extern bool UseStopLoss = True;
+extern bool UseStopLoss = False;
 extern int StopLoss = 20;
 extern bool UseTakeProfit = True;
 extern int TakeProfit = 40;
@@ -31,7 +31,7 @@ extern int TrailingStop = 30;
 int OnInit()
   {
 //---
-   if(Digits == 5 || Digits == 3 || Digits == 1)P = 10;else P = 1;
+   if (Digits == 5 || Digits == 3 || Digits == 1) P = 10; else P = 1;
 
 //---
    return(INIT_SUCCEEDED);
@@ -50,15 +50,19 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 //---
-   Total = TotalOrder();
+   Total = OrdersTotal();
+   
+   if (Total > 1 ) { checkPosition(); }
+   
    bool canOpen;
 
-   if (Total == 0) { canOpen = true; } else { canOpen = getMM(); }
-  
-   Order = getSignal();
+   if (Total == 0) { canOpen = true; }
+   else if (Total == 4) { canOpen = false; }
+   else { canOpen = getMM(); }
 
   // open position
    if (canOpen) {
+      Order = getSignal();
       if (Order == SIGNAL_BUY) {
          //Check free margin
          if (AccountFreeMargin() < (1000 * Lots)) {
@@ -67,7 +71,7 @@ void OnTick()
 
          if (UseStopLoss) StopLossLevel = Ask - StopLoss * Point * P; else StopLossLevel = 0.0;
          if (UseTakeProfit) TakeProfitLevel = Ask + TakeProfit * Point * P; else TakeProfitLevel = 0.0;
-
+         
          Ticket = OrderSend(Symbol(), OP_BUY, Lots, Ask, Slippage, StopLossLevel, TakeProfitLevel, "Buy(#" + MagicNumber + ")", MagicNumber, 0, DodgerBlue);
          if(Ticket > 0) {
             if (OrderSelect(Ticket, SELECT_BY_TICKET, MODE_TRADES)) {
@@ -101,6 +105,26 @@ void OnTick()
    } //end check canOpen
 }
 
+void checkPosition() {
+   double open1, open2, sl1, sl2;
+   int ticket1, ticket2;
+   if (OrderSelect(Total - 1, SELECT_BY_POS, MODE_TRADES)) {
+      sl2 = OrderStopLoss();
+      ticket2 = OrderTicket();
+      open2 = OrderOpenPrice();
+   }
+   if (OrderSelect(Total - 2, SELECT_BY_POS, MODE_TRADES)) {
+      sl1 = OrderStopLoss();
+      ticket1 = OrderTicket();
+      open1 = OrderOpenPrice();
+   }
+   double diff = open1 - open2;
+   double tpMod = diff/2;
+   
+   if (!OrderModify(ticket1, open1, sl1, tpMod, 0, Blue)) Print (GetLastError());
+   if (!OrderModify(ticket2, open2, sl2, tpMod, 0, Blue)) Print (GetLastError());
+}
+
 bool getMM() {
 
    return blockTrade();
@@ -110,19 +134,46 @@ bool getMM() {
 /* Money Management Zone */
 bool blockTrade() {
 
-   if (Total == 4) {
-      if (OrderSelect(3, SELECT_BY_POS, MODE_TRADES)) {
-         if (checkLoss(OrderTickets())) { Alert('Block Full'); return false; }
-      }
+   if (OrderSelect(Total - 1, SELECT_BY_POS, MODE_TRADES)) { //select last order
+      if (loss()) { return true; } else { return false; } //check last order loss or not
    }
+   
+   return true;
+   
 }
 
-bool checkLoss(ticket) {
+bool loss() {
+   double open = OrderOpenPrice();
+   double diff;
+   if (OrderType() == OP_BUY) {
+      diff = open - Close[0];
+   } else {
+      diff = Close[0] - open;
+   }
+
+   if (diff > (StopLoss * Point * P)) { return true; } else { return false; }
 
 }
 //---------------
 /* signal zone */
+int testSignal(){
+   double emaFast_1 = iMA(NULL, 0, 5, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double emaFast_2 = iMA(NULL, 0, 5, 0, MODE_EMA, PRICE_CLOSE, 2);
+   double emaSlow_1 = iMA(NULL, 0, 10, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double emaSlow_2 = iMA(NULL, 0, 10, 0, MODE_EMA, PRICE_CLOSE, 2);
+   //double emaBias = iMA(NULL, PERIOD_D1, 35, 0, MODE_SMA, PRICE_CLOSE, 1);
+   
+   if (emaSlow_2 > emaFast_2 && emaFast_1 >= emaSlow_1) return SIGNAL_BUY;
+
+   if (emaFast_2 > emaSlow_2 && emaSlow_1 >= emaFast_1) return SIGNAL_SELL; 
+   
+   return SIGNAL_NONE;
+}
+
 int getSignal() {
+
+   return testSignal();
+   /*
    bool fish = FisherCheck();
    bool sto = StoCheck();
    string cci = CciCheck();
@@ -131,7 +182,7 @@ int getSignal() {
       return SIGNAL_BUY;
    } else if (!fish && !sto && (cci == "sell")) {
       return SIGNAL_SELL;
-   } else { return SIGNAL_NONE; }
+   } else { return SIGNAL_NONE; } */
 }
 //+------------------------------------------------------------------+
 string CciCheck() {
