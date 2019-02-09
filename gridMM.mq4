@@ -21,7 +21,7 @@ extern int Slippage = 3;
 extern bool UseStopLoss = True;
 int StopLoss = 0;
 extern bool UseTakeProfit = True;
-extern int TakeProfit = 40;
+extern int TakeProfit = 0;
 extern bool UseTrailingStop = False;
 extern int TrailingStop = 30;
 extern float fisher_params = 0.25;
@@ -60,14 +60,8 @@ int OnInit()
    cash = 3000;
    zone = 8;
    pipval = 0.10;
-   
-   for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
-   
-   setVar();
-   current_zone = findCurrentlyZone(last_price);
-   printScreen();
-   
-   
+   risk_per_zone = cash/zone;
+
    
    
    
@@ -89,7 +83,13 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 //---
-
+   for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
+   
+   last_price = Close[0];
+   
+   setVar();
+   current_zone = findCurrentlyZone(last_price);
+   printScreen();
    
    bool can_open;
    
@@ -102,6 +102,12 @@ void OnTick()
       can_open = checkPosition();
    }
    
+   ObjectCreate("rsi", OBJ_LABEL, 0, 0, 0);
+   ObjectSetText("rsi", "rsi2: " + last_price,14, "Verdana", White);
+   ObjectSet("rsi", OBJPROP_CORNER, 0);
+   ObjectSet("rsi", OBJPROP_XDISTANCE, 20);
+   ObjectSet("rsi", OBJPROP_YDISTANCE, 350);
+   
   
   // open position
    if (can_open) {
@@ -109,6 +115,7 @@ void OnTick()
       signal = getSignal();
       if (signal != SIGNAL_NONE){
          StopLoss = stoploss_distance;
+         TakeProfit = zone_distance*10000;
          if (signal == SIGNAL_BUY) {
             //Check free margin
             if (AccountFreeMargin() < (1000 * Lots)) {
@@ -163,11 +170,7 @@ int getSignal(){
 
    double rsi = iRSI(NULL, 0, 2, PRICE_CLOSE, 0);
    
-   ObjectCreate("rsi", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("rsi", "rsi2: " + rsi,14, "Verdana", White);
-   ObjectSet("rsi", OBJPROP_CORNER, 0);
-   ObjectSet("rsi", OBJPROP_XDISTANCE, 20);
-   ObjectSet("rsi", OBJPROP_YDISTANCE, 400);
+   
    
    if (rsi < 10){
       return SIGNAL_BUY;
@@ -203,16 +206,16 @@ bool checkPosition(){
 
 void setVar(){
    
-   high = iHighest(NULL, PERIOD_MN1, MODE_HIGH, 1, 12);
-   high = iHigh(NULL, PERIOD_MN1, high);
+   high = iHighest(NULL, PERIOD_D1, MODE_HIGH, 252, 252);
+   high = iHigh(NULL, PERIOD_D1, high);
    
-   low = iLowest(NULL, PERIOD_MN1, MODE_HIGH, 12, 1);
-   low = iLow(NULL, PERIOD_MN1, low);
+   low = iLowest(NULL, PERIOD_D1, MODE_LOW, 252, 252);
+   low = iLow(NULL, PERIOD_D1, low);
    
    
    all_distance = high - low;
 
-   risk_per_zone = cash/zone;
+   
    std = iStdDevOnArray(priceBuffer,252,252,0,MODE_SMA,0); 
   
    bool find_bullet = False;
@@ -232,8 +235,6 @@ void setVar(){
    zone_distance = all_distance/zone;
    
    
-   last_price = Ask;
-   
    for (int i=0;i<=zone;i++){
       if (i==0){
          zone_price[0] = low;
@@ -246,6 +247,8 @@ void setVar(){
 }
 
 void printScreen(){
+
+   ObjectsDeleteAll();
    
    int font_size = 12;
    int line_spacing = 20;
