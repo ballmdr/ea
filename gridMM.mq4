@@ -19,7 +19,7 @@ extern bool SignalMail = False;
 double Lots = 0.01;
 extern int Slippage = 3;
 extern bool UseStopLoss = True;
-extern int StopLoss = 20;
+int StopLoss = 0;
 extern bool UseTakeProfit = True;
 extern int TakeProfit = 40;
 extern bool UseTrailingStop = False;
@@ -44,6 +44,8 @@ double last_price;
 double stoploss_distance;
 double std;
 double priceBuffer[253];
+int current_zone;
+int total_order;
 
 
 
@@ -57,10 +59,19 @@ int OnInit()
    contract = 1000;
    cash = 3000;
    zone = 8;
-   bullet = 9;
    pipval = 0.10;
    
    for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
+   
+   setVar();
+   current_zone = findCurrentlyZone(last_price);
+   printScreen();
+   
+   
+   
+   
+   
+   
 //---
    return(INIT_SUCCEEDED);
   }
@@ -78,56 +89,114 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 //---
+
    
-   setVar();
-   printScreen();
+   bool can_open;
    
-   findCurrentlyZone();
+   
+   total_order = OrdersTotal();
+   
+   if (total_order == 0){
+      can_open = True;
+   } else {
+      can_open = checkPosition();
+   }
    
   
   // open position
-   if (Total == 0) {
-      if (Order == SIGNAL_BUY) {
-         //Check free margin
-         if (AccountFreeMargin() < (1000 * Lots)) {
-            Print("We have no money. Free Margin = ", AccountFreeMargin());
+   if (can_open) {
+      int signal = SIGNAL_NONE;
+      signal = getSignal();
+      if (signal != SIGNAL_NONE){
+         StopLoss = stoploss_distance;
+         if (signal == SIGNAL_BUY) {
+            //Check free margin
+            if (AccountFreeMargin() < (1000 * Lots)) {
+               Print("We have no money. Free Margin = ", AccountFreeMargin());
+            }
+   
+            if (UseStopLoss) StopLossLevel = Ask - StopLoss * Point * P; else StopLossLevel = 0.0;
+            if (UseTakeProfit) TakeProfitLevel = Ask + TakeProfit * Point * P; else TakeProfitLevel = 0.0;
+   
+            Ticket = OrderSend(Symbol(), OP_BUY, Lots, Ask, Slippage, StopLossLevel, TakeProfitLevel, "Buy(#" + MagicNumber + ")", MagicNumber, 0, DodgerBlue);
+            if(Ticket > 0) {
+               if (OrderSelect(Ticket, SELECT_BY_TICKET, MODE_TRADES)) {
+   				Print("BUY order opened : ", OrderOpenPrice());
+                   if (SignalMail) SendMail("[Signal Alert]", "[" + Symbol() + "] " + DoubleToStr(Ask, Digits) + " Open Buy");
+   			} else {
+   				Print("Error opening BUY order : ", GetLastError());
+   			}
+         } else if (signal == SIGNAL_SELL) {
+                  //Check free margin
+                  if (AccountFreeMargin() < (1000 * Lots)) {
+                     Print("We have no money. Free Margin = ", AccountFreeMargin());
+         
+                  }
+         
+                  if (UseStopLoss) StopLossLevel = Bid + StopLoss * Point * P; else StopLossLevel = 0.0;
+                  if (UseTakeProfit) TakeProfitLevel = Bid - TakeProfit * Point * P; else TakeProfitLevel = 0.0;
+         
+                  Ticket = OrderSend(Symbol(), OP_SELL, Lots, Bid, Slippage, StopLossLevel, TakeProfitLevel, "Sell(#" + MagicNumber + ")", MagicNumber, 0, DeepPink);
+                  if(Ticket > 0) {
+                     if (OrderSelect(Ticket, SELECT_BY_TICKET, MODE_TRADES)) {
+         				Print("SELL order opened : ", OrderOpenPrice());
+                         if (SignalMail) SendMail("[Signal Alert]", "[" + Symbol() + "] " + DoubleToStr(Bid, Digits) + " Open Sell");
+         			} else {
+         				Print("Error opening SELL order : ", GetLastError());
+         			}
+                  }
+               }         
          }
-
-         if (UseStopLoss) StopLossLevel = Ask - StopLoss * Point * P; else StopLossLevel = 0.0;
-         if (UseTakeProfit) TakeProfitLevel = Ask + TakeProfit * Point * P; else TakeProfitLevel = 0.0;
-
-         Ticket = OrderSend(Symbol(), OP_BUY, Lots, Ask, Slippage, StopLossLevel, TakeProfitLevel, "Buy(#" + MagicNumber + ")", MagicNumber, 0, DodgerBlue);
-         if(Ticket > 0) {
-            if (OrderSelect(Ticket, SELECT_BY_TICKET, MODE_TRADES)) {
-				Print("BUY order opened : ", OrderOpenPrice());
-                if (SignalMail) SendMail("[Signal Alert]", "[" + Symbol() + "] " + DoubleToStr(Ask, Digits) + " Open Buy");
-			} else {
-				Print("Error opening BUY order : ", GetLastError());
-			}
-      }
+         
+         
+         
+         
    }
 
  
-   if (Order == SIGNAL_SELL) {
-         //Check free margin
-         if (AccountFreeMargin() < (1000 * Lots)) {
-            Print("We have no money. Free Margin = ", AccountFreeMargin());
 
-         }
-
-         if (UseStopLoss) StopLossLevel = Bid + StopLoss * Point * P; else StopLossLevel = 0.0;
-         if (UseTakeProfit) TakeProfitLevel = Bid - TakeProfit * Point * P; else TakeProfitLevel = 0.0;
-
-         Ticket = OrderSend(Symbol(), OP_SELL, Lots, Bid, Slippage, StopLossLevel, TakeProfitLevel, "Sell(#" + MagicNumber + ")", MagicNumber, 0, DeepPink);
-         if(Ticket > 0) {
-            if (OrderSelect(Ticket, SELECT_BY_TICKET, MODE_TRADES)) {
-				Print("SELL order opened : ", OrderOpenPrice());
-                if (SignalMail) SendMail("[Signal Alert]", "[" + Symbol() + "] " + DoubleToStr(Bid, Digits) + " Open Sell");
-			} else {
-				Print("Error opening SELL order : ", GetLastError());
-			}
-         }
    }
+
+}
+
+int getSignal(){
+
+   double rsi = iRSI(NULL, 0, 2, PRICE_CLOSE, 0);
+   
+   ObjectCreate("rsi", OBJ_LABEL, 0, 0, 0);
+   ObjectSetText("rsi", "rsi2: " + rsi,14, "Verdana", White);
+   ObjectSet("rsi", OBJPROP_CORNER, 0);
+   ObjectSet("rsi", OBJPROP_XDISTANCE, 20);
+   ObjectSet("rsi", OBJPROP_YDISTANCE, 400);
+   
+   if (rsi < 10){
+      return SIGNAL_BUY;
+   } else if (rsi > 90){
+      return SIGNAL_SELL;
+   }
+   return SIGNAL_NONE;
+
+}
+
+bool checkPosition(){
+
+   int num_pos_in_zone = 0;
+   
+   
+   for (int i=0;i<total_order;i++){
+      
+      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES)){
+         if (current_zone == findCurrentlyZone(OrderOpenPrice())){
+            num_pos_in_zone++;
+         }
+      }
+   
+   }
+   Comment("position in zone: " + num_pos_in_zone);
+   if (num_pos_in_zone < bullet){
+      return True; 
+   } else {
+      return False;
    }
 
 }
@@ -144,11 +213,23 @@ void setVar(){
    all_distance = high - low;
 
    risk_per_zone = cash/zone;
-   risk_per_trade = risk_per_zone/bullet;
+   std = iStdDevOnArray(priceBuffer,252,252,0,MODE_SMA,0); 
+  
+   bool find_bullet = False;
+   while(!find_bullet){
+      for (int i=10;i>=1;i--){
+         risk_per_trade = risk_per_zone/i;
+         stoploss_distance = risk_per_trade/pipval;
+         
+         if (stoploss_distance > ((std*3)*10000)){
+            find_bullet = True;
+            bullet = i;
+            break;
+         }
+      }   
+   }
    leverage = contract/risk_per_trade;
    zone_distance = all_distance/zone;
-   stoploss_distance = risk_per_trade/pipval;
-   std = iStdDevOnArray(priceBuffer,100,10,0,MODE_EMA,0);
    
    
    last_price = Ask;
@@ -165,65 +246,83 @@ void setVar(){
 }
 
 void printScreen(){
+   
+   int font_size = 12;
+   int line_spacing = 20;
+   int line_start = 20;
 
-   ObjectCreate("High", OBJ_HLINE, 0, Time[0],high,0,0);
-   ObjectCreate("Low", OBJ_HLINE, 0, Time[0],low,0,0);
+   ObjectCreate("High", OBJ_HLINE, 0, Time[0],high);
+   ObjectCreate("Low", OBJ_HLINE, 0, Time[0],low);
    
    ObjectCreate("RPZ", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("RPZ", "Risk per Zone: " + risk_per_zone,16, "Verdana", White);
+   ObjectSetText("RPZ", "Risk per Zone: " + risk_per_zone,font_size, "Verdana", White);
    ObjectSet("RPZ", OBJPROP_CORNER, 0);
    ObjectSet("RPZ", OBJPROP_XDISTANCE, 20);
-   ObjectSet("RPZ", OBJPROP_YDISTANCE, 20);
+   ObjectSet("RPZ", OBJPROP_YDISTANCE, line_start);
    
    ObjectCreate("RPT", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("RPT", "Risk per Trade: " + risk_per_trade,16,"Verdana",White);
+   ObjectSetText("RPT", "Risk per Trade: " + risk_per_trade,font_size,"Verdana",White);
    ObjectSet("RPT", OBJPROP_CORNER, 0);
    ObjectSet("RPT", OBJPROP_XDISTANCE, 20);
-   ObjectSet("RPT", OBJPROP_YDISTANCE, 60);
+   ObjectSet("RPT", OBJPROP_YDISTANCE, line_start+=line_spacing);
    
    ObjectCreate("ZD", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("ZD", "Zone Distance(pips): " + zone_distance*10000,16,"Verdana",White);
+   ObjectSetText("ZD", "Zone Distance(pips): " + zone_distance*10000,font_size,"Verdana",White);
    ObjectSet("ZD", OBJPROP_CORNER, 0);
    ObjectSet("ZD", OBJPROP_XDISTANCE, 20);
-   ObjectSet("ZD", OBJPROP_YDISTANCE, 100);
+   ObjectSet("ZD", OBJPROP_YDISTANCE, line_start+=line_spacing);
    
    ObjectCreate("cash", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("cash", "Cash: " + cash + ", Zone: " + zone + ", Bullet per Zone: " + bullet,16,"Verdana",White);
+   ObjectSetText("cash", "Cash: " + cash + ", Zone: " + zone + ", Bullet per Zone: " + bullet,font_size,"Verdana",White);
    ObjectSet("cash", OBJPROP_CORNER, 0);
    ObjectSet("cash", OBJPROP_XDISTANCE, 20);
-   ObjectSet("cash", OBJPROP_YDISTANCE, 140);
+   ObjectSet("cash", OBJPROP_YDISTANCE, line_start+=line_spacing);
    
    ObjectCreate("lv", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("lv", "Leverage: " + leverage,16,"Verdana",White);
+   ObjectSetText("lv", "Leverage: " + leverage,font_size,"Verdana",White);
    ObjectSet("lv", OBJPROP_CORNER, 0);
    ObjectSet("lv", OBJPROP_XDISTANCE, 20);
-   ObjectSet("lv", OBJPROP_YDISTANCE, 180);
+   ObjectSet("lv", OBJPROP_YDISTANCE, line_start+=line_spacing);
    
    ObjectCreate("sld", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("sld", "Stoploss Distance: " + stoploss_distance,16,"Verdana",White);
+   ObjectSetText("sld", "Stoploss Distance: " + stoploss_distance,font_size,"Verdana",White);
    ObjectSet("sld", OBJPROP_CORNER, 0);
    ObjectSet("sld", OBJPROP_XDISTANCE, 20);
-   ObjectSet("sld", OBJPROP_YDISTANCE, 220);
+   ObjectSet("sld", OBJPROP_YDISTANCE, line_start+=line_spacing);
    
    ObjectCreate("3sd", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("3sd", "3 SD: " + (std*3) * 10000,16,"Verdana",White);
+   ObjectSetText("3sd", "3 SD: " + (std*3) * 10000,font_size,"Verdana",White);
    ObjectSet("3sd", OBJPROP_CORNER, 0);
    ObjectSet("3sd", OBJPROP_XDISTANCE, 20);
-   ObjectSet("3sd", OBJPROP_YDISTANCE, 260);
+   ObjectSet("3sd", OBJPROP_YDISTANCE, line_start+=line_spacing);
+   
+   ObjectCreate("hl", OBJ_LABEL, 0, 0, 0);
+   ObjectSetText("hl", "High - Low: " + high + " - " + low,font_size,"Verdana",White);
+   ObjectSet("hl", OBJPROP_CORNER, 0);
+   ObjectSet("hl", OBJPROP_XDISTANCE, 20);
+   ObjectSet("hl", OBJPROP_YDISTANCE, line_start+=line_spacing);
    
    for(int i=0;i<=zone;i++){
-      ObjectCreate("zone"+i, OBJ_HLINE, 0, Time[0],zone_price[i],0,0);
+      ObjectCreate("zone"+i, OBJ_HLINE, 0, Time[0],zone_price[i]);
+      ObjectSet("zone"+i, OBJPROP_STYLE, STYLE_DOT);
    }
+   
+   ObjectCreate("currentzone", OBJ_LABEL, 0, 0, 0);
+   ObjectSetText("currentzone", "Current Zone: " + current_zone,font_size,"Verdana",White);
+   ObjectSet("currentzone", OBJPROP_CORNER, 0);
+   ObjectSet("currentzone", OBJPROP_XDISTANCE, 20);
+   ObjectSet("currentzone", OBJPROP_YDISTANCE, line_start+=line_spacing); 
 
 }
 
-void findCurrentlyZone(){
+int findCurrentlyZone(double price){
 
    for (int i=0;i<=zone;i++){
-      if (zone_price[i] <= last_price && last_price <= zone_price[i+1]){
-         
+      if (zone_price[i] <= price && price <= zone_price[i+1]){
+         return i+1;
       }
    }
+   return 0;
 
 }
 
