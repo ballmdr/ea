@@ -21,7 +21,7 @@ extern int Slippage = 3;
 extern bool UseStopLoss = True;
 int StopLoss = 0;
 extern bool UseTakeProfit = True;
-\extern int TakeProfit = 0;
+extern int TakeProfit = 0;
 extern bool UseTrailingStop = False;
 extern int TrailingStop = 30;
 extern float fisher_params = 0.25;
@@ -30,16 +30,17 @@ double high;
 double low;
 
 double all_distance;
-int contract;
-int cash;
-int zone;
+int contract = 1000;
+int cash = 3000;
+int zone = 8;
+int maxarr = zone + 1;
 int bullet;
 double risk_per_zone;
 double risk_per_trade;
 double leverage;
 double zone_distance;
-double zone_price[9];
-double pipval;
+double zone_price[10];
+double pipval = 0.10;
 double last_price;
 double stoploss_distance;
 double std;
@@ -56,14 +57,11 @@ int OnInit()
   {
 //---
    if(Digits == 5 || Digits == 3 || Digits == 1)P = 10;else P = 1;
-   contract = 1000;
-   cash = 3000;
-   zone = 8;
-   pipval = 0.10;
    risk_per_zone = cash/zone;
+   
+   setGrid();
 
-   
-   
+   setMM();
    
    
 //---
@@ -83,16 +81,20 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 //---
-   for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
+   
+   
+   if (last_price > zone_price[9] || last_price < zone_price[0]){
+      for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
+      setGrid();
+      setMM();
+   }
    
    last_price = Close[0];
    
-   setVar();
    current_zone = findCurrentlyZone(last_price);
    printScreen();
    
    bool can_open;
-   
    
    total_order = OrdersTotal();
    
@@ -158,7 +160,7 @@ void OnTick()
          
          
          
-   }
+      }
 
  
 
@@ -169,7 +171,6 @@ void OnTick()
 int getSignal(){
 
    double rsi = iRSI(NULL, 0, 2, PRICE_CLOSE, 0);
-   
    
    
    if (rsi < 10){
@@ -204,17 +205,8 @@ bool checkPosition(){
 
 }
 
-void setVar(){
+void setMM(){
    
-   high = iHighest(NULL, PERIOD_D1, MODE_HIGH, 252, 252);
-   high = iHigh(NULL, PERIOD_D1, high);
-   
-   low = iLowest(NULL, PERIOD_D1, MODE_LOW, 252, 252);
-   low = iLow(NULL, PERIOD_D1, low);
-   
-   
-   all_distance = high - low;
-
    
    std = iStdDevOnArray(priceBuffer,252,252,0,MODE_SMA,0); 
   
@@ -231,11 +223,23 @@ void setVar(){
          }
       }   
    }
+   
    leverage = contract/risk_per_trade;
+   
+
+}
+
+void setGrid(){
+
+   high = iHighest(NULL, PERIOD_D1, MODE_HIGH, 252, 0);
+   high = iHigh(NULL, PERIOD_D1, high);
+   
+   low = iLowest(NULL, PERIOD_D1, MODE_LOW, 252, 0);
+   low = iLow(NULL, PERIOD_D1, low);
+   all_distance = high - low;
    zone_distance = all_distance/zone;
    
-   
-   for (int i=0;i<=zone;i++){
+   for (int i=0;i<=zone+1;i++){
       if (i==0){
          zone_price[0] = low;
       } else {
@@ -243,7 +247,6 @@ void setVar(){
       }
    }
    
-
 }
 
 void printScreen(){
