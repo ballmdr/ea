@@ -39,7 +39,7 @@ double risk_per_zone;
 double risk_per_trade;
 double leverage;
 double zone_distance;
-double zone_price[10];
+double zone_price[9];
 double pipval = 0.10;
 double last_price;
 double stoploss_distance;
@@ -63,6 +63,7 @@ int OnInit()
 
    setMM();
    
+   printScreen();
    
 //---
    return(INIT_SUCCEEDED);
@@ -81,17 +82,15 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 //---
+   last_price = Close[0];
+   current_zone = findCurrentlyZone(last_price);
    
-   
-   if (last_price > zone_price[9] || last_price < zone_price[0]){
-      for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
+   if (last_price > zone_price[zone] || last_price < zone_price[0]){
       setGrid();
-      setMM();
+      setMM();   
    }
    
-   last_price = Close[0];
    
-   current_zone = findCurrentlyZone(last_price);
    printScreen();
    
    bool can_open;
@@ -104,12 +103,6 @@ void OnTick()
       can_open = checkPosition();
    }
    
-   ObjectCreate("rsi", OBJ_LABEL, 0, 0, 0);
-   ObjectSetText("rsi", "rsi2: " + last_price,14, "Verdana", White);
-   ObjectSet("rsi", OBJPROP_CORNER, 0);
-   ObjectSet("rsi", OBJPROP_XDISTANCE, 20);
-   ObjectSet("rsi", OBJPROP_YDISTANCE, 350);
-   
   
   // open position
    if (can_open) {
@@ -117,7 +110,7 @@ void OnTick()
       signal = getSignal();
       if (signal != SIGNAL_NONE){
          StopLoss = stoploss_distance;
-         TakeProfit = zone_distance*10000;
+         TakeProfit = (zone_distance*10000)/bullet;
          if (signal == SIGNAL_BUY) {
             //Check free margin
             if (AccountFreeMargin() < (1000 * Lots)) {
@@ -157,12 +150,7 @@ void OnTick()
                }         
          }
          
-         
-         
-         
-      }
-
- 
+      } 
 
    }
 
@@ -170,22 +158,13 @@ void OnTick()
 
 int getSignal(){
 
-   double rsi = iRSI(NULL, 0, 2, PRICE_CLOSE, 0);
-   
-   
-   if (rsi < 10){
-      return SIGNAL_BUY;
-   } else if (rsi > 90){
-      return SIGNAL_SELL;
-   }
-   return SIGNAL_NONE;
+   return testSignal();
 
 }
 
 bool checkPosition(){
 
    int num_pos_in_zone = 0;
-   
    
    for (int i=0;i<total_order;i++){
       
@@ -207,7 +186,7 @@ bool checkPosition(){
 
 void setMM(){
    
-   
+   for (int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
    std = iStdDevOnArray(priceBuffer,252,252,0,MODE_SMA,0); 
   
    bool find_bullet = False;
@@ -226,20 +205,19 @@ void setMM(){
    
    leverage = contract/risk_per_trade;
    
-
 }
 
 void setGrid(){
 
-   high = iHighest(NULL, PERIOD_D1, MODE_HIGH, 252, 0);
+   high = iHighest(NULL, PERIOD_D1, MODE_HIGH, 252, 1);
    high = iHigh(NULL, PERIOD_D1, high);
    
-   low = iLowest(NULL, PERIOD_D1, MODE_LOW, 252, 0);
+   low = iLowest(NULL, PERIOD_D1, MODE_LOW, 252, 1);
    low = iLow(NULL, PERIOD_D1, low);
    all_distance = high - low;
    zone_distance = all_distance/zone;
    
-   for (int i=0;i<=zone+1;i++){
+   for (int i=0;i<=zone;i++){
       if (i==0){
          zone_price[0] = low;
       } else {
@@ -324,6 +302,9 @@ void printScreen(){
 int findCurrentlyZone(double price){
 
    for (int i=0;i<=zone;i++){
+      if (i == 8){
+         return i;
+      }
       if (zone_price[i] <= price && price <= zone_price[i+1]){
          return i+1;
       }
@@ -333,6 +314,36 @@ int findCurrentlyZone(double price){
 }
 
 //+------------------------------------------------------------------+
+
+int testSignal(){
+   double emaFast_1 = iMA(NULL, 0, 10, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double emaFast_2 = iMA(NULL, 0, 10, 0, MODE_EMA, PRICE_CLOSE, 2);
+   double emaSlow_1 = iMA(NULL, 0, 20, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double emaSlow_2 = iMA(NULL, 0, 20, 0, MODE_EMA, PRICE_CLOSE, 2);
+   //double emaBias = iMA(NULL, PERIOD_D1, 35, 0, MODE_SMA, PRICE_CLOSE, 1);
+   
+   if (emaSlow_2 > emaFast_2 && emaFast_1 >= emaSlow_1) return SIGNAL_BUY;
+
+   if (emaFast_2 > emaSlow_2 && emaSlow_1 >= emaFast_1) return SIGNAL_SELL; 
+   
+   return SIGNAL_NONE;
+}
+
+
+int fisher(){
+
+   bool fish = FisherCheck();
+   bool sto = StoCheck();
+   string cci = CciCheck();
+   
+   if (fish && sto && (cci == "buy")) {
+      return SIGNAL_BUY;
+   } else if (!fish && !sto && (cci == "sell")) {
+      return SIGNAL_SELL;
+   } else { return SIGNAL_NONE; }
+   
+}
+
 string CciCheck() {
    
    double temp = iCCI(NULL, 0, 20, PRICE_TYPICAL, 0);
