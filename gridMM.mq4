@@ -21,22 +21,25 @@ double StopLossLevel,TakeProfitLevel,StopLevel;
 extern int MagicNumber = 12345;
 extern bool SignalMail = False;
 double Lots=0.01;
-extern int Slippage=3;
-extern bool UseStopLoss=True;
+int Slippage=3;
+bool UseStopLoss=True;
 int StopLoss=0;
-extern bool UseTakeProfit=True;
-extern int TakeProfit=0;
-extern bool UseTrailingStop=False;
-extern int TrailingStop=30;
-extern float fisher_params=0.25;
+bool UseTakeProfit=True;
+int TakeProfit=0;
+bool UseTrailingStop=False;
+int TrailingStop=30;
+
 
 double high;
 double low;
 
 double all_distance;
 int contract=1000;
-int cash = 20000;
-int zone = 8;
+extern int cash = 3000;
+extern int zone = 8;
+extern int max_leverage = 10;
+extern int max_bullet = 100;
+
 int maxarr=zone+1;
 int bullet;
 double risk_per_zone;
@@ -44,7 +47,7 @@ double risk_per_trade;
 double leverage;
 double zone_distance;
 double zone_mini_distance;
-double zone_price[9];
+double zone_price[];
 double zone_mini_price[];
 double pipval=0.10;
 double last_price;
@@ -67,6 +70,8 @@ int OnInit()
 //---
    if(Digits==5 || Digits==3 || Digits==1)P=10;else P=1;
    risk_per_zone=cash/zone;
+   
+   ArrayResize(zone_price, zone+1);
 
    setGrid();
    setMM();
@@ -238,15 +243,7 @@ void modSL(double newSL){
    }
 
 }
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-int getSignal()
-  {
 
-   return testSignal();
-
-  }
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -319,21 +316,20 @@ void setMM()
    double new_sl;
    
    
-   while(!find_bullet)
-     {
-      for(int i=100;i>=1;i--)
-        {
+   while(!find_bullet) {
+      for(int i=max_bullet;i>=1;i--){
          risk_per_trade=risk_per_zone/i;
          new_sl = risk_per_trade/pipval;
-
-         if(new_sl>((std*3)*10000))
-           {
-            find_bullet=True;
-            bullet=i;
-            break;
-           }
-        }
-     }
+         leverage=contract/risk_per_trade;
+         if (leverage < max_leverage){
+            if(new_sl>((std*3)*10000)) {
+               find_bullet=True;
+               bullet=i;
+               break;
+            }
+         }
+      }
+   }
      
    if (stoploss_distance > 0 && stoploss_distance != new_sl) {
       modSL(new_sl);
@@ -343,7 +339,7 @@ void setMM()
    
    stoploss_distance = new_sl;
 
-   leverage=contract/risk_per_trade;
+   
 
   }
 //+------------------------------------------------------------------+
@@ -498,94 +494,5 @@ int findCurrentlyZone(double price)
      }
    return 0;
 
-  }
-//+------------------------------------------------------------------+
-
-int testSignal()
-  {
-   double emaFast_1 = iMA(NULL, 0, 25, 0, MODE_EMA, PRICE_CLOSE, 1);
-   double emaFast_2 = iMA(NULL, 0, 25, 0, MODE_EMA, PRICE_CLOSE, 2);
-   double emaSlow_1 = iMA(NULL, 0, 50, 0, MODE_EMA, PRICE_CLOSE, 1);
-   double emaSlow_2 = iMA(NULL, 0, 50, 0, MODE_EMA, PRICE_CLOSE, 2);
-   double maBias = iMA(NULL, PERIOD_D1, 35, 0, MODE_SMA, PRICE_CLOSE, 1);
-
-   if (last_price > maBias)
-      if(emaSlow_2 > emaFast_2 && emaFast_1 >= emaSlow_1) 
-         return SIGNAL_BUY;
-   
-
-   //if(emaFast_2 > emaSlow_2 && emaSlow_1 >= emaFast_1) return SIGNAL_SELL;
-
-   return SIGNAL_NONE;
-  }
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-int fisher()
-  {
-
-   bool fish= FisherCheck();
-   bool sto = StoCheck();
-   string cci=CciCheck();
-
-   if(fish && sto && (cci=="buy")) 
-     {
-      return SIGNAL_BUY;
-        } else if(!fish && !sto && (cci=="sell")) {
-      return SIGNAL_SELL;
-        } else { return SIGNAL_NONE; 
-     }
-
-  }
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-string CciCheck() 
-  {
-
-   double temp=iCCI(NULL,0,20,PRICE_TYPICAL,0);
-
-   string cciSignal;
-   if(temp<-75) { cciSignal="buy"; }
-   else if(temp>75) { cciSignal="sell"; }
-   else { cciSignal="no"; }
-   return cciSignal;
-  }
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-bool StoCheck() 
-  {
-   double temp=iStochastic(NULL,0,6,3,3,MODE_SMA,0,MODE_MAIN,0);
-   bool stoSignal=true;
-   if(temp<50) { stoSignal=true; }
-   else if(temp>50) { stoSignal=false; }
-
-   return stoSignal;
-  }
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-bool FisherCheck() 
-  {
-
-   int    period=10;
-   double Value=0,Value1=0,Value2=0,Fish=0,Fish1=0,Fish2=0;
-   double price;
-   double MinL=0;
-   double MaxH=0;
-
-   MaxH = High[iHighest(NULL,0,MODE_HIGH,period,0)];
-   MinL = Low[iLowest(NULL,0,MODE_LOW,period,0)];
-   price = (High[0]+Low[0])/2;
-   Value = 0.33*2*((price-MinL)/(MaxH-MinL)-0.5);
-   Value=MathMin(MathMax(Value,-0.999),0.999);
-   Fish1= 0.5*MathLog((1+Value)/(1-Value));
-
-   bool up=true;
-   if(Fish1>fisher_params) { up=true; }
-   else if(Fish1<fisher_params) { up=false; }
-
-   return(up);
   }
 //+------------------------------------------------------------------+
