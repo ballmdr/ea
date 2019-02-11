@@ -35,7 +35,7 @@ double low;
 
 double all_distance;
 int contract=1000;
-int cash = 3000;
+int cash = 20000;
 int zone = 8;
 int maxarr=zone+1;
 int bullet;
@@ -43,15 +43,22 @@ double risk_per_zone;
 double risk_per_trade;
 double leverage;
 double zone_distance;
+double zone_mini_distance;
 double zone_price[9];
+double zone_mini_price[];
 double pipval=0.10;
 double last_price;
 double stoploss_distance = 0;
 double std;
 double priceBuffer[253];
 int current_zone;
+int current_zone_mini;
 int total_order;
 int last_zone;
+int last_zone_mini;
+bool can_open;
+
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
@@ -63,9 +70,13 @@ int OnInit()
 
    setGrid();
    setMM();
+   
    last_price = Close[0];
    current_zone = findCurrentlyZone(last_price);
+   setGridMini();
+   current_zone_mini = findCurrentlyZoneMini(last_price);
    last_zone = current_zone;
+   last_zone_mini = current_zone_mini;
    printScreen();
 
 //---
@@ -87,42 +98,49 @@ void OnTick()
 //---
    total_order = OrdersTotal();
    last_price = Close[0];
-
-
-   setGrid();
-   setMM();
-
    current_zone = findCurrentlyZone(last_price);
+   current_zone_mini = findCurrentlyZoneMini(last_price);
+   if (newBar()) {
+      setGrid();
+      setMM();
+      setGridMini();
+   }
+   
+   if (last_zone_mini < current_zone_mini){
+      //closeProfit();
+      last_zone_mini = current_zone_mini;
+   } else if (last_zone_mini != current_zone_mini) {
+      Order = SIGNAL_BUY;
+      last_zone_mini = current_zone_mini;
+   }
    if(last_zone < current_zone) {
+   
       closeProfit();
       last_zone = current_zone;
    } else if (last_zone > current_zone) {
-      modBreakeven();
+      //modBreakeven();
       last_zone= current_zone;
    }
 
    printScreen();
 
-   bool can_open;
-
    total_order = OrdersTotal();
 
    if(total_order == 0)
       can_open = True;
-   else 
-      can_open = checkPosition();
+   else
+      can_open = checkPositionMini();
    
 
 // open position
    if(can_open) 
      {
-      int signal = SIGNAL_NONE;
-      signal = getSignal();
-      if(signal != SIGNAL_NONE)
+      //Order = getSignal();
+      if(Order != SIGNAL_NONE)
         {
          StopLoss = stoploss_distance;
-         TakeProfit = (std*10000)/bullet;
-         if(signal == SIGNAL_BUY) 
+         TakeProfit = zone_mini_distance*10000;
+         if(Order == SIGNAL_BUY) 
            {
             //Check free margin
             if(AccountFreeMargin()<(1000*Lots)) 
@@ -143,7 +161,7 @@ void OnTick()
                     } else {
                   Print("Error opening BUY order : ",GetLastError());
                  }
-                 } else if(signal==SIGNAL_SELL) {
+                 } else if(Order==SIGNAL_SELL) {
                //Check free margin
                if(AccountFreeMargin()<(1000*Lots)) 
                  {
@@ -167,12 +185,22 @@ void OnTick()
                  }
               }
            }
-
+         Order = SIGNAL_NONE;
         }
 
      }
 
   }
+  
+bool newBar(){
+   static datetime new_time = 0;
+   bool new_bar = False;
+   if (new_time != Time[0]) {
+      new_time = Time[0];
+      new_bar = True;
+   }
+   return new_bar;
+}
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
@@ -222,6 +250,18 @@ int getSignal()
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+bool checkPositionMini(){
+   
+   for (int i=0;i<total_order;i++){
+      if (OrderSelect(i,SELECT_BY_POS,MODE_TRADES)){
+         if(current_zone_mini == findCurrentlyZoneMini(OrderOpenPrice()))
+            return False;
+      }
+   }
+   return True;
+
+}
+
 bool checkPosition()
   {
 
@@ -250,6 +290,25 @@ bool checkPosition()
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+void setGridMini(){
+
+   double zone_mini_high = zone_price[current_zone];
+   double zone_mini_low = zone_price[current_zone-1];
+   zone_mini_distance = (zone_mini_high - zone_mini_low)/bullet;
+   
+   ArrayResize(zone_mini_price, bullet+1);
+   
+   for(int i=0;i<=bullet;i++)
+     {
+      if(i==0)
+        {
+         zone_mini_price[0] = zone_mini_low;
+           } else {
+         zone_mini_price[i] = zone_mini_price[i-1] + zone_mini_distance;
+        }
+     }
+
+}
 void setMM()
   {
 
@@ -262,7 +321,7 @@ void setMM()
    
    while(!find_bullet)
      {
-      for(int i=10;i>=1;i--)
+      for(int i=100;i>=1;i--)
         {
          risk_per_trade=risk_per_zone/i;
          new_sl = risk_per_trade/pipval;
@@ -323,6 +382,19 @@ void printScreen()
    int font_size=12;
    int line_spacing=20;
    int line_start=20;
+   
+   for(int i=0;i<=zone;i++)
+     {
+      ObjectCreate("zone"+i,OBJ_HLINE,0,Time[0],zone_price[i]);
+      ObjectSet("zone"+i,OBJPROP_STYLE,STYLE_SOLID);
+     }
+     
+   for(int i=0;i<=bullet;i++)
+     {
+      ObjectCreate("zone_mini"+i,OBJ_HLINE,0,Time[0],zone_mini_price[i]);
+      ObjectSet("zone_mini"+i,OBJPROP_STYLE,STYLE_DOT);
+      ObjectSet("zone_mini"+i, OBJPROP_COLOR, clrDeepSkyBlue);
+     }
 
    ObjectCreate("RPZ",OBJ_LABEL,0,0,0);
    ObjectSetText("RPZ","Risk per Zone: "+risk_per_zone,font_size,"Verdana",White);
@@ -372,34 +444,50 @@ void printScreen()
    ObjectSet("hl",OBJPROP_XDISTANCE,20);
    ObjectSet("hl",OBJPROP_YDISTANCE,line_start+=line_spacing);
 
-   for(int i=0;i<=zone;i++)
-     {
-      ObjectCreate("zone"+i,OBJ_HLINE,0,Time[0],zone_price[i]);
-      ObjectSet("zone"+i,OBJPROP_STYLE,STYLE_SOLID);
-     }
-
    ObjectCreate("currentzone",OBJ_LABEL,0,0,0);
    ObjectSetText("currentzone","Current Zone: "+current_zone,font_size,"Verdana",White);
    ObjectSet("currentzone",OBJPROP_CORNER,0);
    ObjectSet("currentzone",OBJPROP_XDISTANCE,20);
    ObjectSet("currentzone",OBJPROP_YDISTANCE,line_start+=line_spacing);
    
-   ObjectCreate("lastzone",OBJ_LABEL,0,0,0);
-   ObjectSetText("lastzone","Last Zone: "+last_zone,font_size,"Verdana",White);
-   ObjectSet("lastzone",OBJPROP_CORNER,0);
-   ObjectSet("lastzone",OBJPROP_XDISTANCE,20);
-   ObjectSet("lastzone",OBJPROP_YDISTANCE,line_start+=line_spacing);
+   ObjectCreate("currentzonemini",OBJ_LABEL,0,0,0);
+   ObjectSetText("currentzonemini","Current Zone Mini: "+current_zone_mini,font_size,"Verdana",White);
+   ObjectSet("currentzonemini",OBJPROP_CORNER,0);
+   ObjectSet("currentzonemini",OBJPROP_XDISTANCE,20);
+   ObjectSet("currentzonemini",OBJPROP_YDISTANCE,line_start+=line_spacing);
+   
+   ObjectCreate("canopen",OBJ_LABEL,0,0,0);
+   ObjectSetText("canopen","Can Open: "+can_open,font_size,"Verdana",White);
+   ObjectSet("canopen",OBJPROP_CORNER,0);
+   ObjectSet("canopen",OBJPROP_XDISTANCE,20);
+   ObjectSet("canopen",OBJPROP_YDISTANCE,line_start+=line_spacing);
 
   }
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+int findCurrentlyZoneMini(double price){
+
+   for (int i=0;i<=bullet;i++) {
+   
+      if (i == bullet){
+         return i;
+      }
+      if (zone_mini_price[i] <= price && price <= zone_mini_price[i+1])
+      {
+         return i+1;
+      }
+   
+   }
+   return 0;
+
+}
 int findCurrentlyZone(double price)
   {
 
    for(int i=0;i<=zone;i++)
      {
-      if(i==8)
+      if(i==zone)
         {
          return i;
         }
