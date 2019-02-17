@@ -37,8 +37,8 @@ double all_distance;
 int contract=1000;
 extern int cash = 3000;
 extern int zone = 8;
-extern int max_leverage = 10;
-extern int max_bullet = 100;
+extern int max_leverage = 100;
+extern int max_bullet = 5;
 
 int maxarr=zone+1;
 int bullet;
@@ -60,6 +60,7 @@ int total_order;
 int last_zone;
 int last_zone_mini;
 double maBias;
+int pos[];
 
 
 //+------------------------------------------------------------------+
@@ -82,6 +83,7 @@ int OnInit()
    current_zone_mini = findCurrentlyZoneMini(last_price);
    last_zone = current_zone;
    last_zone_mini = current_zone_mini;
+   checkPositionMini();
    printScreen();
 
 //---
@@ -128,16 +130,16 @@ void OnTick()
       last_zone= current_zone;
    }
    */
-   bool can_open;
+   bool can_open = True;
    printScreen();
 
    total_order = OrdersTotal();
 
-   if(total_order == 0)
-      can_open = True;
-   else
-      can_open = checkPositionMini();
-
+   if(total_order > 0){
+      checkPositionMini();
+      if (pos[current_zone_mini] > 0)
+         can_open = False;
+   }
    
 
 // open position
@@ -246,21 +248,21 @@ void modSL(double newSL){
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-bool checkPositionMini(){
-
-   int num_pos_in_zone = 0;
+void checkPositionMini(){
    
+   // reset pos array
+   for (int i=0;i<=bullet;i++){
+      pos[i] = 0;
+   }
+   int tmp_zone = 0;
+   //count position in each array
    for (int i=0;i<total_order;i++){
       if (OrderSelect(i,SELECT_BY_POS,MODE_TRADES))
-         if(current_zone_mini == findCurrentlyZoneMini(OrderOpenPrice()))
-            num_pos_in_zone++;
+         if(tmp_zone == findCurrentlyZoneMini(OrderOpenPrice())) {
+            pos[tmp_zone] += OrderLots();
+            pos[0] += OrderLots();
+         }
    }
-   Comment(num_pos_in_zone);
-   if (num_pos_in_zone > 0)
-      return False;
-   else
-      return True;
-   
 
 }
 
@@ -302,9 +304,8 @@ void setGridMini(){
 }
 void setMM()
   {
-
-   for(int i=252;i>=0;i--) priceBuffer[i]=iClose(NULL,PERIOD_D1,i);
-   std=iStdDevOnArray(priceBuffer,252,252,0,MODE_SMA,0);
+   
+   std = iStdDev(NULL, PERIOD_D1, 252, 0, MODE_SMA, PRICE_CLOSE, 0);
 
    bool find_bullet=False;
    double new_sl;
@@ -316,7 +317,7 @@ void setMM()
          new_sl = risk_per_trade/pipval;
          leverage=contract/risk_per_trade;
          if (leverage < max_leverage){
-            if(new_sl>((std*3)*10000)) {
+            if(new_sl > std*3) {
                find_bullet=True;
                bullet=i;
                break;
@@ -324,12 +325,12 @@ void setMM()
          }
       }
    }
-     
+   
+   ArrayResize(pos, bullet+1);
+   
    if (stoploss_distance > 0 && stoploss_distance != new_sl) {
       modSL(new_sl);
    }
-   
-   
    
    stoploss_distance = new_sl;
 
@@ -384,6 +385,11 @@ void printScreen()
       ObjectCreate("zone_mini"+i,OBJ_HLINE,0,Time[0],zone_mini_price[i]);
       ObjectSet("zone_mini"+i,OBJPROP_STYLE,STYLE_DOT);
       ObjectSet("zone_mini"+i, OBJPROP_COLOR, clrDeepSkyBlue);
+      ObjectCreate("pos"+i,OBJ_LABEL,0,0,0);
+      ObjectSetText("pos"+i,"pos"+ i + ": " + pos[i],font_size,"Verdana",White);
+      ObjectSet("pos"+i,OBJPROP_CORNER,0);
+      ObjectSet("pos"+i,OBJPROP_XDISTANCE,20);
+      ObjectSet("pos"+i,OBJPROP_YDISTANCE,line_start+=line_spacing);
      }
 
    ObjectCreate("mabias",OBJ_HLINE,0,Time[0],maBias);
@@ -449,6 +455,8 @@ void printScreen()
    ObjectSet("currentzonemini",OBJPROP_CORNER,0);
    ObjectSet("currentzonemini",OBJPROP_XDISTANCE,20);
    ObjectSet("currentzonemini",OBJPROP_YDISTANCE,line_start+=line_spacing);
+
+
    
    
 
