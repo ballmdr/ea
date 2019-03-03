@@ -573,7 +573,10 @@ int testSignal(){
    double emaSlow_2 = iMA(NULL, 0, 70, 0, MODE_SMA, PRICE_CLOSE, 2);
    maBias = iMA(NULL, PERIOD_D1, 5, 0, MODE_SMA, PRICE_CLOSE, 1);
    
-   if (last_price > maBias && emaSlow_2 > emaFast_2 && emaFast_1 >= emaSlow_1) return SIGNAL_BUY;
+   if (iLow(NULL, PERIOD_CURRENT, 1) < emaFast_1 && iClose(NULL, PERIOD_CURRENT, 1) > emaFast_1 && emaFast_1 > emaSlow_1) {
+      return SIGNAL_BUY;
+   }
+   // if (last_price > maBias && emaSlow_2 > emaFast_2 && emaFast_1 >= emaSlow_1) return SIGNAL_BUY;
 
    //if (emaFast_2 > emaSlow_2 && emaSlow_1 >= emaFast_1) return SIGNAL_SELL; 
    
