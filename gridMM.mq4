@@ -22,7 +22,7 @@ extern int MagicNumber = 12345;
 extern bool SignalMail = False;
 double Lots=0.01;
 int Slippage=3;
-bool UseStopLoss=True;
+bool UseStopLoss=False;
 int StopLoss=0;
 bool UseTakeProfit=True;
 extern int TakeProfit=10;
@@ -187,7 +187,8 @@ void OnTick()
                     } else {
                   Print("Error opening BUY order : ",GetLastError());
                  }
-                 } else if(Order==SIGNAL_SELL) {
+              }
+           }  else if(Order==SIGNAL_SELL) {
                //Check free margin
                if(AccountFreeMargin()<(1000*Lots)) 
                  {
@@ -210,7 +211,6 @@ void OnTick()
                     }
                  }
               }
-           }
          Order = SIGNAL_NONE;
         }
 
@@ -575,7 +575,7 @@ int testSignal(){
    
    if (last_price > maBias && emaSlow_2 > emaFast_2 && emaFast_1 >= emaSlow_1) return SIGNAL_BUY;
 
-   if (emaFast_2 > emaSlow_2 && emaSlow_1 >= emaFast_1) return SIGNAL_SELL; 
+   //if (emaFast_2 > emaSlow_2 && emaSlow_1 >= emaFast_1) return SIGNAL_SELL; 
    
    return SIGNAL_NONE;
 }
